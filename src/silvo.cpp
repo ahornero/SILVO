@@ -12,8 +12,7 @@
  *   rendered scene for visual interpretation and a BIP file for analysis.
  *
  * Author:
- *   Alberto Hornero (© 2025)
- *   Institute of Sustainable Agriculture (IAS–CSIC), Spain
+ *   Alberto Hornero
  *
  * License:
  *   This program is free software: you can redistribute it and/or modify it
