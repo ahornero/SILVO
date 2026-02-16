@@ -1,4 +1,11 @@
 # SILVO — Simplified Light–Vegetation Overlay Model
+![CI](https://github.com/ahornero/SILVO/actions/workflows/cpp.yml/badge.svg)
+![DOI](https://img.shields.io/badge/DOI-pending-lightgrey)
+[![License](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE)
+![OpenMP](https://img.shields.io/badge/OpenMP-enabled-success.svg)
+<!-- 
+![Release](https://img.shields.io/github/v/release/ahornero/SILVO)
+-->
 
 ![SILVO model visualization](./assets/output_images.png)
 
