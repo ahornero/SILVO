@@ -1,6 +1,6 @@
-# SILVO — Simplified Light–Vegetation Overlay Model
+# SILVO — a Simplified Light–Vegetation Overlay model
 ![CI](https://github.com/ahornero/SILVO/actions/workflows/cpp.yml/badge.svg)
-![DOI](https://img.shields.io/badge/DOI-pending-lightgrey)
+[![DOI](https://img.shields.io/badge/DOI-10.1016/j.jag.2026.105178-lightgrey)](https://doi.org/10.1016/j.jag.2026.105178)
 [![License](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE)
 ![OpenMP](https://img.shields.io/badge/OpenMP-enabled-success.svg)
 <!-- 
@@ -13,6 +13,16 @@
 (e.g., orchards, open woodlands, agroforestry systems) from **minimal inputs**: tree crown position/size plus sun/view geometry.
 
 It is designed to be fast and reproducible, and it is parallelised with **OpenMP**.
+
+## Table of contents
+
+- [What SILVO produces](#what-silvo-produces)
+- [Quick start (Linux)](#quick-start-linux)
+- [Usage](#usage)
+- [Help](#help)
+- [Inputs](#inputs)
+- [Outputs](#outputs)
+- [How to cite](#how-to-cite)
 
 ## What SILVO produces
 
@@ -112,3 +122,25 @@ SILVO writes outputs to the current working directory:
     - _vertical_profile.csv_ (generated when camera_zenith == 90)
     - _gap_fraction_profile.csv_ (generated when gap_fraction_profile_enabled = 1 and camera_zenith != 90)
 
+## How to cite
+
+If you use SILVO in academic work, please cite:
+
+```text
+Hornero, A., Prikaziuk, E., Hernandez-Clemente, R., van der Tol, C. (2026).
+SILVO, a lightweight 3D illumination model to characterise the spatial structure of heterogeneous vegetation canopies.
+International Journal of Applied Earth Observation and Geoinformation, 147, 105178. https://doi.org/10.1016/j.jag.2026.105178
+```
+```bibtex
+@article{Hornero2026SILVO,
+  title   = {SILVO, a lightweight 3D illumination model to characterise the spatial structure of heterogeneous vegetation canopies},
+  author  = {Hornero, A. and Prikaziuk, E. and Hernandez-Clemente, R. and van der Tol, C.},
+  journal = {International Journal of Applied Earth Observation and Geoinformation},
+  volume  = {147},
+  pages   = {105178},
+  year    = {2026},
+  issn    = {1569-8432},
+  doi     = {10.1016/j.jag.2026.105178},
+  url     = {https://doi.org/10.1016/j.jag.2026.105178}
+}
+```
