@@ -1,8 +1,5 @@
 /*
- * SILVO – Simplified Light–Vegetation Overlay Model
- * --------------------------------------------------
- * File: raytracer.cpp
- *
+ * SILVO – Simplified Light–Vegetation Overlay Model. Version 1.0
  * Description:
  *   Core ray-tracing module of the SILVO model. This component implements
  *   backward (eye) ray tracing to simulate geometric illumination within
@@ -30,11 +27,9 @@
  * Citation:
  *   If you use SILVO in academic work, please cite the corresponding article:
  *
- *   Hornero. A, et al. (2025). SILVO: A lightweight 3D illumination
- *   model to characterise the spatial structure of heterogeneous vegetation
- *   canopies. (Accepted, DOI pending).
- *
- * --------------------------------------------------------------------------
+ *   Hornero, A., Prikaziuk, E., Hernandez-Clemente, R., van der Tol, C. (2026).
+ *   SILVO, a lightweight 3D illumination model to characterise the spatial structure of heterogeneous vegetation canopies.
+ *   International Journal of Applied Earth Observation and Geoinformation, 147, 105178. https://doi.org/10.1016/j.jag.2026.105178
  */
 
 #include <cstdlib>
