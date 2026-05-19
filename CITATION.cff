@@ -1,0 +1,43 @@
+cff-version: 1.2.0
+message: "If you use SILVO in academic work, please cite the paper below."
+title: "SILVO: a Simplified Light-Vegetation Overlay model"
+type: software
+authors:
+  - given-names: A.
+    family-names: Hornero
+  - given-names: E.
+    family-names: Prikaziuk
+  - given-names: R.
+    family-names: Hernandez-Clemente
+  - given-names: C.
+    family-names: van der Tol
+keywords:
+  - vegetation canopy model
+  - light interception
+  - gap fraction
+  - ray tracing
+  - agroforestry
+  - orchard simulation
+  - remote sensing
+repository-code: https://github.com/ahornero/SILVO
+url: https://github.com/ahornero/SILVO
+license: AGPL-3.0-or-later
+abstract: "SILVO is a lightweight 3D ray-tracing model to characterise the structure and illumination of heterogeneous vegetation canopies from minimal inputs."
+preferred-citation:
+  type: article
+  title: "SILVO, a lightweight 3D illumination model to characterise the spatial structure of heterogeneous vegetation canopies"
+  authors:
+    - given-names: A.
+      family-names: Hornero
+    - given-names: E.
+      family-names: Prikaziuk
+    - given-names: R.
+      family-names: Hernandez-Clemente
+    - given-names: C.
+      family-names: van der Tol
+  journal: "International Journal of Applied Earth Observation and Geoinformation"
+  volume: "147"
+  pages: "105178"
+  year: 2026
+  doi: "10.1016/j.jag.2026.105178"
+  url: "https://doi.org/10.1016/j.jag.2026.105178"

@@ -1,0 +1,79 @@
+{
+  "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
+  "@type": "SoftwareSourceCode",
+  "name": "SILVO",
+  "alternateName": "Simplified Light-Vegetation Overlay model",
+  "description": "SILVO is a lightweight 3D ray-tracing model for vegetation canopy structure, light interception, gap fraction, and illumination.",
+  "codeRepository": "https://github.com/ahornero/SILVO",
+  "url": "https://github.com/ahornero/SILVO",
+  "license": "https://www.gnu.org/licenses/agpl-3.0.en.html",
+  "keywords": [
+    "vegetation canopy model",
+    "light interception",
+    "gap fraction",
+    "ray tracing",
+    "agroforestry",
+    "orchard simulation",
+    "remote sensing"
+  ],
+  "programmingLanguage": "C++",
+  "author": [
+    {
+      "@type": "Person",
+      "givenName": "A.",
+      "familyName": "Hornero"
+    },
+    {
+      "@type": "Person",
+      "givenName": "E.",
+      "familyName": "Prikaziuk"
+    },
+    {
+      "@type": "Person",
+      "givenName": "R.",
+      "familyName": "Hernandez-Clemente"
+    },
+    {
+      "@type": "Person",
+      "givenName": "C.",
+      "familyName": "van der Tol"
+    }
+  ],
+  "citation": {
+    "@type": "ScholarlyArticle",
+    "name": "SILVO, a lightweight 3D illumination model to characterise the spatial structure of heterogeneous vegetation canopies",
+    "author": [
+      {
+        "@type": "Person",
+        "givenName": "A.",
+        "familyName": "Hornero"
+      },
+      {
+        "@type": "Person",
+        "givenName": "E.",
+        "familyName": "Prikaziuk"
+      },
+      {
+        "@type": "Person",
+        "givenName": "R.",
+        "familyName": "Hernandez-Clemente"
+      },
+      {
+        "@type": "Person",
+        "givenName": "C.",
+        "familyName": "van der Tol"
+      }
+    ],
+    "isPartOf": {
+      "@type": "PublicationVolume",
+      "volumeNumber": "147",
+      "isPartOf": {
+        "@type": "Periodical",
+        "name": "International Journal of Applied Earth Observation and Geoinformation"
+      }
+    },
+    "pageStart": "105178",
+    "datePublished": "2026",
+    "identifier": "https://doi.org/10.1016/j.jag.2026.105178"
+  }
+}

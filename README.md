@@ -7,10 +7,12 @@
 ![Release](https://img.shields.io/github/v/release/ahornero/SILVO)
 -->
 
-![SILVO model visualization](./assets/output_images.png)
+![SILVO logo](./assets/silvo_logo.svg)
 
-**SILVO** is a lightweight 3D ray-tracing model to characterise the **structure and illumination of heterogeneous vegetation canopies**
-(e.g., orchards, open woodlands, agroforestry systems) from **minimal inputs**: tree crown position/size plus sun/view geometry.
+**SILVO** is a lightweight 3D ray-tracing model for **vegetation canopy structure, light interception, gap fraction, and illumination**.
+It is designed for heterogeneous canopies such as **orchards, open woodlands, agroforestry systems, and isolated trees** using **minimal inputs**: tree crown position/size plus sun/view geometry.
+
+Keywords: vegetation canopy model, light interception model, gap fraction, tree crown geometry, orchard simulation, agroforestry model, ray tracing.
 
 It is designed to be fast and reproducible, and it is parallelised with **OpenMP**.
 
@@ -57,6 +59,8 @@ cd examples/ourique_default
 ./run_silvo.sh
 ```
 Outputs are written in the folder where you run SILVO (e.g., inside the example directory) and from the previous example should generate a BIL (ENVI) file (with its header, hdr companion file) containing all the output as layers and a PNG image as preview.
+
+![SILVO model visualization](./assets/output_images.png)
 
 ## Usage
 ![SILVO workflow](./assets/workflow.png)
