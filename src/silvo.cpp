@@ -1,9 +1,10 @@
 /*
- * SILVO – Simplified Light–Vegetation Overlay Model. Version 1.0
+ * SILVO – Simplified Light–Vegetation Overlay Model. Version 1.1
  * Description:
  *   Core ray-tracing module of the SILVO model. This component implements
  *   backward (eye) ray tracing to simulate geometric illumination within
- *   heterogeneous vegetation canopies represented as collections of spheres.
+ *   heterogeneous vegetation canopies represented as collections of spheres
+ *   and vertically aligned spheroids.
  *   The model computes structural metrics such as gap fraction, transmission,
  *   reflection and cumulative vegetation path length, and produces a simple
  *   rendered scene for visual interpretation and a BIP file for analysis.
@@ -41,6 +42,9 @@
 #include <cassert>
 #include <sstream>
 #include <iomanip>
+#include <algorithm>
+#include <limits>
+#include <stdexcept>
 #include <omp.h>
 #include <getopt.h>
 
@@ -128,36 +132,159 @@ public:
     }
 };
 
-class Sphere {
+class SceneObject {
 public:
-    Vec3f center;			// Sphere position
-    Real radius, radius2;	// Sphere definition
-    Surface surface;        // Surface type
-    Vec3f colour;     		// Surface colour
+    Vec3f center;
+    Real horizontalRadius;
+    Real verticalRadius;
+    Surface surface;
+    Vec3f colour;
 
-    Sphere(
+    SceneObject(
+        const Vec3f &c = Vec3f(),
+        const Real &r = 0,
+        const Surface &s = Surface::VEGETATION,
+        const Vec3f &sc = Vec3f()) :
+        center(c),
+        horizontalRadius(r),
+        verticalRadius(r),
+        surface(s),
+        colour(sc)
+    {}
+
+    SceneObject(
         const Vec3f &c,
-        const Real &r,
+        const Real &hr,
+        const Real &vr,
         const Surface &s,
         const Vec3f &sc) :
-        center(c), radius(r), radius2(r * r), surface(s), colour(sc)
+        center(c),
+        horizontalRadius(hr),
+        verticalRadius(vr),
+        surface(s),
+        colour(sc)
     {}
-    
-    // Calculate the intersection of a ray with the sphere using a geometric solution
+
+    Real directionalDiameter(const Vec3f &direction) const {
+        const Real invRh2 = 1.0 / (horizontalRadius * horizontalRadius);
+        const Real invRv2 = 1.0 / (verticalRadius * verticalRadius);
+        const Real denom = (direction.x * direction.x + direction.y * direction.y) * invRh2 +
+                           (direction.z * direction.z) * invRv2;
+        if (denom <= 0.0) return 2.0 * std::max(horizontalRadius, verticalRadius);
+        return 2.0 / std::sqrt(denom);
+    }
+
+    Real relativeThickness(const Real segmentLength, const Vec3f &direction) const {
+        const Real diameter = directionalDiameter(direction);
+        if (!std::isfinite(diameter) || diameter <= 0.0) return 0.0;
+        const Real ratio = segmentLength / diameter;
+        return std::max(Real(0.0), std::min(Real(1.0), ratio));
+    }
+
     bool intersect(const Vec3f &rayorig, const Vec3f &raydir, Real &t0, Real &t1) const
     {
-        Vec3f l = center - rayorig;
-        Real tca = l.dot(raydir);
-        if (tca < 0) return false;
-        Real d2 = l.dot(l) - tca * tca;
-        if (d2 > radius2) return false;
-        Real thc = sqrt(radius2 - d2);
-        t0 = tca - thc;
-        t1 = tca + thc;
-        
-        return true;
+        const Vec3f origin = rayorig - center;
+        const Real invRh2 = 1.0 / (horizontalRadius * horizontalRadius);
+        const Real invRv2 = 1.0 / (verticalRadius * verticalRadius);
+
+        const Real A = (raydir.x * raydir.x + raydir.y * raydir.y) * invRh2 +
+                       (raydir.z * raydir.z) * invRv2;
+        const Real B = 2.0 * ((origin.x * raydir.x + origin.y * raydir.y) * invRh2 +
+                              (origin.z * raydir.z) * invRv2);
+        const Real C = ((origin.x * origin.x + origin.y * origin.y) * invRh2 +
+                        (origin.z * origin.z) * invRv2) - 1.0;
+
+        if (!std::isfinite(A) || A <= 0.0) return false;
+
+        Real discriminant = B * B - 4.0 * A * C;
+
+        // Scale-aware tolerance: accept tiny negative values caused only by
+        // floating-point round-off in tangential intersections.
+        const Real discriminantScale = B * B + std::fabs(4.0 * A * C);
+        const Real discriminantTolerance =
+            32.0 * std::numeric_limits<Real>::epsilon() * discriminantScale;
+
+        if (discriminant < -discriminantTolerance) return false;
+        if (discriminant < 0.0) discriminant = 0.0;
+
+        const Real sqrtDiscriminant = std::sqrt(discriminant);
+
+        if (sqrtDiscriminant == 0.0) {
+            t0 = t1 = -B / (2.0 * A);
+        } else {
+            // Numerically stable quadratic solution, avoiding cancellation.
+            const Real q = -0.5 * (B + std::copysign(sqrtDiscriminant, B));
+            t0 = q / A;
+            t1 = C / q;
+            if (t0 > t1) std::swap(t0, t1);
+        }
+
+        return t1 >= 0.0;
+    }
+
+    Vec3f normalAt(const Vec3f &point) const {
+        Vec3f normal(
+            (point.x - center.x) / (horizontalRadius * horizontalRadius),
+            (point.y - center.y) / (horizontalRadius * horizontalRadius),
+            (point.z - center.z) / (verticalRadius * verticalRadius)
+        );
+        const Real len2 = normal.length2();
+        if (len2 > 0.0) normal = normal * (1.0 / std::sqrt(len2));
+        else normal = Vec3f(0.0, 0.0, 1.0);
+        return normal;
     }
 };
+
+using Sphere = SceneObject;
+
+inline std::string trim(const std::string& text) {
+    const std::string whitespace = " \t\r\n";
+    const std::size_t start = text.find_first_not_of(whitespace);
+    if (start == std::string::npos) return "";
+    const std::size_t end = text.find_last_not_of(whitespace);
+    return text.substr(start, end - start + 1);
+}
+
+inline SceneObject parseSceneEntry(const std::string& text, const Surface &surface = Surface::VEGETATION, const Vec3f &colour = Vec3f(0.0, 0.0, 0.0)) {
+    std::string cleaned = text;
+    const std::size_t commentPos = cleaned.find('#');
+    if (commentPos != std::string::npos) cleaned = cleaned.substr(0, commentPos);
+    cleaned = trim(cleaned);
+    if (cleaned.empty()) {
+        throw std::invalid_argument("Empty scene entry");
+    }
+
+    std::istringstream iss(cleaned);
+    std::vector<Real> values;
+    Real value;
+    while (iss >> value) values.push_back(value);
+
+    if (!iss.eof()) {
+        throw std::invalid_argument("Scene entry contains non-numeric data: '" + cleaned + "'");
+    }
+
+    if (values.size() != 4 && values.size() != 5) {
+        throw std::invalid_argument("Scene entry must contain exactly 4 or 5 numeric values: '" + cleaned + "'");
+    }
+
+    for (const Real v : values) {
+        if (!std::isfinite(v)) {
+            throw std::invalid_argument("Scene entry contains a non-finite value: '" + cleaned + "'");
+        }
+    }
+
+    const Real x = values[0];
+    const Real y = values[1];
+    const Real z = values[2];
+    const Real horizontalRadius = values[3];
+    const Real verticalRadius = (values.size() == 4) ? values[3] : values[4];
+
+    if (horizontalRadius <= 0.0 || verticalRadius <= 0.0) {
+        throw std::invalid_argument("Scene entry radii must be strictly positive: '" + cleaned + "'");
+    }
+
+    return SceneObject(Vec3f(x, y, z + verticalRadius), horizontalRadius, verticalRadius, surface, colour);
+}
 
 struct Camera {
     Real zenith;
@@ -171,8 +298,8 @@ struct PixelData {
     Surface surface = Surface::SKY;
     Real transmission = 0; // if the transmission is not 1, then we are in a shaded area
     Real intersectedDistance = 0; // intersected section of the shaded vegetation
-    Real intersectedSphereHeight = 0; // idem for height
-    Real intersectedSphereRadius = 0; // idem for radius
+    Real intersectedCrownBaseHeight = 0; // base height of the intersected crown
+    Real intersectedCrownHorizontalRadius = 0; // horizontal radius of the intersected crown
     Real reflection = 0;
     Vec3f hittingPosition = 0;
     Real density = 0;
@@ -201,67 +328,67 @@ PixelData trace(const Vec3f &rayorig, const Vec3f &raydir, const std::vector<Sph
     const Sphere* sphere = NULL;
     PixelData pixel;
 
-    // Find the closest intersection of the beam with the spheres
     for (unsigned i = 0; i < spheres.size(); i++) {
         Real t0 = INFINITY, t1 = INFINITY;
         if (spheres[i].intersect(rayorig, raydir, t0, t1)) {
-            if (t0 < 0) t0 = t1;
-            if (t0 < tnear) {
-                tnear = t0;
+            const Real hitDistance = (t0 >= 0.0) ? t0 : t1;
+            const Real segmentStart = std::max(Real(0.0), t0);
+            const Real thickness = std::max(Real(0.0), t1 - segmentStart);
+
+            if (hitDistance < tnear) {
+                tnear = hitDistance;
                 sphere = &spheres[i];
-                pixel.density = t1 - t0;
+                pixel.density = thickness;
             }
             if(spheres[i].surface == Surface::VEGETATION) {
-                pixel.totalDensity += (t1 - t0);
-                pixel.normalisedTotalDensity += (t1 - t0) / (spheres[i].radius * 2);
+                const Real relative = spheres[i].relativeThickness(thickness, raydir);
+                pixel.totalDensity += thickness;
+                pixel.normalisedTotalDensity += relative;
             }
         }
     }
 
-    // If there is no intersection, returns the default pixel.
     if (!sphere) return pixel;
 
     pixel.surface = sphere->surface;
     pixel.density = (sphere->surface == Surface::SOIL) ? 0 : pixel.density;
     pixel.colour = 0;
-    
-    // Point of the first intersection
+
     Vec3f phit = rayorig + raydir * tnear;
-    Vec3f nhit = phit - sphere->center;
-    nhit.normalize();
+    Vec3f nhit = sphere->normalAt(phit);
     Real bias = 1e-4;
 
     pixel.hittingPosition = phit;
 
-    // Contribution of the light sources to the final colour of the object
     for (unsigned i = 0; i < spheres.size(); ++i) {
         if (spheres[i].surface == Surface::LIGHT) {
             Vec3f transmission = 1;
             Vec3f lightDirection = spheres[i].center - phit;
             lightDirection.normalize();
-            
-            // Check if the point is shaded
+
             for (unsigned j = 0; j < spheres.size(); ++j) {
                 if (i != j) {
                     Real t0, t1;
                     if (spheres[j].intersect(phit + nhit * bias, lightDirection, t0, t1)) {
-                        transmission = transmission * (1 - (t1 - t0) / (spheres[j].radius * 2)); // se calcula en función del grosor interceptado
-                        pixel.intersectedDistance += (t1 - t0);
-                        pixel.intersectedSphereHeight = spheres[j].center.z - spheres[j].radius;
-                        pixel.intersectedSphereRadius = spheres[j].radius;
+                        const Real segmentStart = std::max(Real(0.0), t0);
+                        const Real segLen = std::max(Real(0.0), t1 - segmentStart);
+                        const Real relative = spheres[j].relativeThickness(segLen, lightDirection);
+                        transmission = transmission * (1 - relative);
+                        pixel.intersectedDistance += segLen;
+                        pixel.intersectedCrownBaseHeight = spheres[j].center.z - spheres[j].verticalRadius;
+                        pixel.intersectedCrownHorizontalRadius = spheres[j].horizontalRadius;
                     }
                 }
             }
-            
-            // Accumulates light colour if not shaded
+
             pixel.colour = pixel.colour + sphere->colour * transmission *
                             std::max(Real(0), nhit.dot(lightDirection));
-            
+
             pixel.transmission = transmission.x;
             pixel.reflection = std::max(Real(0), nhit.dot(lightDirection));
         }
     }
-    
+
     return pixel;
 }
 
@@ -322,7 +449,6 @@ std::vector<Sphere> loadScene(const std::string& filename, Sphere sun, const Rea
     std::vector<Sphere> spheres;
     std::ifstream file(filename);
     std::string line;
-    Real x, y, z, radius;
 
     // Three green hues
     std::vector<Vec3f> greenTones = {
@@ -336,24 +462,21 @@ std::vector<Sphere> loadScene(const std::string& filename, Sphere sun, const Rea
     if (file.is_open()) {
         if(debug == 2) std::clog << "SCENE: " << std::endl;
         while (getline(file, line)) {
-            // Skip commented lines
-            if (line.empty() || line[0] == '#')
-                continue;
+            if (line.empty() || line.find_first_not_of(" \t\r\n") == std::string::npos) continue;
+            const std::size_t commentStart = line.find('#');
+            const std::string trimmedLine = (commentStart == std::string::npos) ? line : line.substr(0, commentStart);
+            if (trimmedLine.find_first_not_of(" \t\r\n") == std::string::npos) continue;
 
-            std::istringstream iss(line);            
-            if (iss >> x >> y >> z >> radius) {
-                // Assign colour cyclically
-                Vec3f color = greenTones[colorIndex % greenTones.size()];
+            try {
+                const SceneObject object = parseSceneEntry(trimmedLine, Surface::VEGETATION, greenTones[colorIndex % greenTones.size()]);
                 colorIndex++;
-
-                // Offset to the Z-coordinate so that the sphere starts on the ground
-                z += radius;
-                // Add the sphere with the assigned colour
-                spheres.push_back(Sphere(Vec3f(x, y, z), radius, Surface::VEGETATION, color));
-
-                if(debug == 2) std::clog << "\t(" << x << ", " << y << ", " << z << ")\tr = " << radius << "\t" << color << std::endl;
-            } else {
-                std::cerr << "Error reading the line: " << line << std::endl;
+                spheres.push_back(object);
+                if(debug == 2) {
+                    std::clog << "\t(" << object.center.x << ", " << object.center.y << ", " << object.center.z << ")\trh = " << object.horizontalRadius << ", rv = " << object.verticalRadius << "\t" << object.colour << std::endl;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "Error reading the line (" << line << "): " << e.what() << std::endl;
+                std::exit(EXIT_FAILURE);
             }
         }
         file.close();
@@ -533,8 +656,8 @@ void saveImage(const std::vector<PixelData>& pixelDataArray, const std::string& 
         values[3] = static_cast<float>(pixelData.surface);
         values[4] = static_cast<float>(pixelData.transmission);
         values[5] = static_cast<float>(pixelData.intersectedDistance);
-        values[6] = static_cast<float>(pixelData.intersectedSphereHeight);
-        values[7] = static_cast<float>(pixelData.intersectedSphereRadius);
+        values[6] = static_cast<float>(pixelData.intersectedCrownBaseHeight);
+        values[7] = static_cast<float>(pixelData.intersectedCrownHorizontalRadius);
         values[8] = static_cast<float>(pixelData.reflection);
         values[9] = static_cast<float>(pixelData.hittingPosition.x);
         values[10] = static_cast<float>(pixelData.hittingPosition.y);
@@ -570,14 +693,14 @@ void saveImage(const std::vector<PixelData>& pixelDataArray, const std::string& 
     hdrFile << "byte order = 0\n"; // Byte order: 0 means little-endian
     hdrFile << "band names = { Red, Green, Blue, \
                 Surface [soil(0) or vegetation(1)], Transmission [0 (shadow) to 1 (sunlit)], \
-                Intersected Distance (m), Intersected Sphere Height (m), Intersected Sphere Radius (m), \
+                Intersected Distance (m), Intersected Crown Base Height (m), Intersected Crown Horizontal Radius (m), \
                 Reflection [0-1], HitX, HitY, HitZ, Density (m), TotalDensity (m), NormalisedTotalDensity [0-1+ w/ overlapping] }\n";
 
     hdrFile.close();
 }
 
 Stats computeStats(const std::vector<PixelData>& pixelDataArray) {
-    Stats stats;
+    Stats stats{};
 
     unsigned n_pixels_soil_sunlit = 0;
     unsigned n_pixels_soil_shaded = 0;
@@ -601,14 +724,30 @@ Stats computeStats(const std::vector<PixelData>& pixelDataArray) {
 
     n_pixels_total = n_pixels_soil_shaded + n_pixels_soil_sunlit + n_pixels_vegetation_shaded + n_pixels_vegetation_sunlit;
 
-    if(n_pixels_total != width * height)
-        std::clog << "Warning: n_pixels_total != width * height (" << n_pixels_total << " != " << width * height << ")" << std::endl;
+    const unsigned n_pixels_sky = width * height - n_pixels_total;
+    if (debug && n_pixels_sky > 0) {
+        std::clog << "Sky pixels excluded from statistics: " << n_pixels_sky 
+            << " / " << width * height << " (" << std::fixed << std::setprecision(2)
+            << 100.0 * static_cast<Real>(n_pixels_sky) / (width * height) << "%)" << std::endl;
+    }
+
+    if (n_pixels_total == 0) {
+        std::clog << "Warning: no soil or vegetation pixels were found" << std::endl;
+        return stats;
+    }
 
     stats.sunlit_soil = (Real) n_pixels_soil_sunlit / n_pixels_total;
     stats.shaded_soil = (Real) n_pixels_soil_shaded / n_pixels_total;
     stats.sunlit_vegetation = (Real) n_pixels_vegetation_sunlit / n_pixels_total;
     stats.shaded_vegetation = (Real) n_pixels_vegetation_shaded / n_pixels_total;
-    stats.normalised_density = accumulated_normalised_density / (n_pixels_vegetation_shaded + n_pixels_vegetation_sunlit) /4 * 6;
+    
+    const unsigned n_pixels_vegetation =
+        n_pixels_vegetation_shaded + n_pixels_vegetation_sunlit;
+    constexpr Real MEAN_CHORD_NORMALISATION = 1.5; // equivalent to the previous /4*6
+    stats.normalised_density =
+        (n_pixels_vegetation > 0)
+        ? accumulated_normalised_density / n_pixels_vegetation * MEAN_CHORD_NORMALISATION
+        : 0.0;
 
     return stats;
 }
@@ -683,27 +822,36 @@ int main(int argc, char **argv)
         if(debug)
             std::clog << "Starting gap fraction profile..." << std::endl << std::flush;
         
-        Real max_height = 0;
-        for (unsigned x = 0; x < height*width; ++x)
-            if (pixelDataArray[x].hittingPosition.z > max_height)
-                max_height = pixelDataArray[x].density;
-        max_height = ceil(max_height);
-        
-        // for loop from 0 to max_height with 50 steps
+Real max_height = 0.0;
+        for (const Sphere& object : scenario) {
+            if (object.surface == Surface::VEGETATION) {
+                max_height = std::max(max_height, object.center.z + object.verticalRadius);
+            }
+        }
+        max_height = std::ceil(max_height);
+
         gfpFile << "height,all_veg, sunlit_veg, shaded_veg, all_soil, sunlit_soil, shaded_soil" << std::endl;
-        unsigned count = 0;
-        for (Real z = 0; z <= max_height; z += max_height / PROFILE_STEPS) {
-            // para cada z, calculamos el gap_fraction y su proporcion sunlit/shaded
-            scenario = loadScene(sceneFile, sun, z);
-            std::vector<PixelData> pd = render(scenario, camera);
-            Stats stats = computeStats(pd);
 
-            gfpFile << z << "," << stats.sunlit_vegetation + stats.shaded_vegetation << "," << 
-                stats.sunlit_vegetation << "," << stats.shaded_vegetation << "," <<
-                stats.sunlit_soil + stats.shaded_soil << "," << stats.sunlit_soil << "," << stats.shaded_soil << std::endl;
+        if (max_height <= 0.0) {
+            if (debug)
+                std::clog << "Gap fraction profile skipped: no vegetation height available." << std::endl;
+        } else {
+            const Real dz = max_height / PROFILE_STEPS;
+            for (unsigned step = 0; step <= PROFILE_STEPS; ++step) {
+                const Real z = step * dz;
 
-            if(debug)
-                showProgressBar(count++, PROFILE_STEPS);
+                // para cada z, calculamos el gap_fraction y su proporcion sunlit/shaded
+                scenario = loadScene(sceneFile, sun, z);
+                std::vector<PixelData> pd = render(scenario, camera);
+                Stats stats = computeStats(pd);
+
+                gfpFile << z << "," << stats.sunlit_vegetation + stats.shaded_vegetation << "," <<
+                    stats.sunlit_vegetation << "," << stats.shaded_vegetation << "," <<
+                    stats.sunlit_soil + stats.shaded_soil << "," << stats.sunlit_soil << "," << stats.shaded_soil << std::endl;
+
+                if(debug)
+                    showProgressBar(step, PROFILE_STEPS);
+            }
         }
         gfpFile.close();
     }

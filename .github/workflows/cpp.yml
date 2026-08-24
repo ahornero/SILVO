@@ -17,5 +17,8 @@ jobs:
       - name: Build (default)
         run: make
 
+      - name: Run scene geometry tests
+        run: make test
+
       - name: Build (pedantic)
         run: make pedantic || true

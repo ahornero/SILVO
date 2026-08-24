@@ -24,6 +24,7 @@ It is designed to be fast and reproducible, and it is parallelised with **OpenMP
 - [Help](#help)
 - [Inputs](#inputs)
 - [Outputs](#outputs)
+- [Changelog](#changelog)
 - [How to cite](#how-to-cite)
 
 ## What SILVO produces
@@ -53,11 +54,21 @@ The executable is created at (already precompiled in the repo for amd64)
 ```bash
 ./bin/silvo
 ```
+To remove generated build/render outputs and keep the repo clean:
+```bash
+make clean
+```
 ### 4) Run an example
 ```bash
-cd examples/ourique_default
+cd examples/ourique_default-spheres
 ./run_silvo.sh
 ```
+The repository keeps both geometry sets separated by suffix:
+- `*-spheres` contains the legacy sphere-based examples.
+- `*-spheroids` contains the vertical-spheroid examples.
+
+Examples are intentionally named by geometry type so both models remain easy to compare and use side by side.
+
 Outputs are written in the folder where you run SILVO (e.g., inside the example directory) and from the previous example should generate a BIL (ENVI) file (with its header, hdr companion file) containing all the output as layers and a PNG image as preview.
 
 ![SILVO model visualization](./assets/output_images.png)
@@ -88,19 +99,27 @@ Usage: ./bin/silvo
 ```
 ## Inputs
 ### _scene.txt_ (vegetation crowns)
-Plain text. Each non-comment (#...) line contains:
+Plain text. Each non-comment (#...) line contains either:
 ```text
 x  y  z  radius
 ```
+or
+```text
+x  y  z  horizontalRadius  verticalRadius
+```
 - Lines starting with # are ignored.
-- z is typically 0 for flat terrain (SILVO places spheres sitting on the ground).
+- If `verticalRadius` is omitted, the object is treated as a sphere.
+- `z` is the base height of the crown; SILVO places the crown centre at `z + verticalRadius`.
+- `verticalRadius < horizontalRadius` gives a flattened crown, while `verticalRadius > horizontalRadius` gives an elongated one.
+- This release introduces support for vertical spheroids while preserving backward compatibility with legacy 4-column scene files.
 Example:
 ```text
-# x   y   z   radius
-0.0  0.0  0.0  2.5
+# x   y   z   horizontalRadius   verticalRadius
+0.0  0.0  0.0  2.5  2.5
 8.0  0.0  0.0  2.0
-0.0  8.0  0.0  3.0
+0.0  8.0  0.0  3.0  4.0
 ```
+Legacy 4-column entries remain fully supported, so older `scene.txt` files still work without modification.
 ### _settings.txt_ (camera + sun + flags)
 Plain text key/value pairs, e.g.:
 ```text
@@ -125,6 +144,10 @@ SILVO writes outputs to the current working directory:
 - Optional CSV profiles:
     - _vertical_profile.csv_ (generated when camera_zenith == 90)
     - _gap_fraction_profile.csv_ (generated when gap_fraction_profile_enabled = 1 and camera_zenith != 90)
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for the project history and recent changes.
 
 ## How to cite
 

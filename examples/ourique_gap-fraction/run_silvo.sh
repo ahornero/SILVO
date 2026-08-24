@@ -9,4 +9,4 @@
 # - output.bip (and its companion .hdr file)
 # - gap_fraction_profile.csv
 
-../../bin/silvo
+../../bin/silvo --scene ../ourique_default/scene.txt

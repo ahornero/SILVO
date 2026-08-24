@@ -4,7 +4,7 @@ solar_azimuth = 121.845
 
 # Camera location
 # if camera_zenith is 90, then a vertical profile will be generated
-camera_zenith = 90
+camera_zenith = 0
 camera_azimuth = 180
 camera_distance = 14000
 camera_fov = 1.5

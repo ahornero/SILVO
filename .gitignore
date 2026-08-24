@@ -1,0 +1,21 @@
+# Local editor settings
+.vscode/
+
+# Generated binaries from local builds/tests
+bin/test_scene_geometry
+
+# Render and analysis outputs
+output_image.ppm
+output_image.png
+output.bip
+output.hdr
+vertical_profile.csv
+gap_fraction_profile.csv
+*.ppm
+*.bip
+*.hdr
+*.csv
+
+# Generic noise
+.DS_Store
+Thumbs.db
