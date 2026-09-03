@@ -1,5 +1,5 @@
 /*
- * SILVO – Simplified Light–Vegetation Overlay Model. Version 1.1
+ * SILVO – Simplified Light–Vegetation Overlay Model. Version 1.2
  * Description:
  *   Core ray-tracing module of the SILVO model. This component implements
  *   backward (eye) ray tracing to simulate geometric illumination within
@@ -58,6 +58,7 @@
 #define SKY_COLOUR Vec3f(0.25, 0.72, 0.77)
 #define SOIL_SPHERE_RADIUS 6371000
 #define PROFILE_STEPS 50
+#define EARTH_SUN_DISTANCE 149600000000 // real mean Earth-Sun distance, in metres
 
 unsigned debug = 0;
 const unsigned width = 1280, height = 960;
@@ -78,6 +79,8 @@ struct Settings {
     Real caa = 0; 	// camera azimuth angle
     Real cds = 600; // camera distance
     Real fov = 30;  // camera field of view
+    Real csize = 0; // orthographic half-height, in metres; 0 or negative means auto-fit to vegetation
+    Real cmargin = 0.01; // auto-fit margin fraction (0.01 = 1%)
 };
 
 struct Stats {
@@ -290,8 +293,69 @@ struct Camera {
     Real zenith;
     Real azimuth;
     Real distance; // distancia al origen (0,0,0)
-    Real fov; // vertical fov en grados
+    Real fov; // vertical fov en grados, solo usado en modo perspectiva
+    bool orthographic = false;
+    Real size = 0; // semialtura del encuadre ortografico, en unidades de escena
+    Real offsetRight = 0; // desplazamiento lateral del encuadre ortografico (centrado en la vegetacion, no en el origen)
+    Real offsetUp = 0;
 };
+
+struct CameraBasis {
+    Vec3f position;
+    Vec3f direction;
+    Vec3f right;
+    Vec3f up;
+};
+
+CameraBasis computeCameraBasis(const Camera& camera) {
+    Real cameraZenithRad = (camera.zenith == 0 ? 0.00001 : camera.zenith) * M_PI / 180.0f;
+    Real cameraAzimuthRad = camera.azimuth * M_PI / 180.0f;
+    Vec3f position(
+        camera.distance * sin(cameraZenithRad) * sin(cameraAzimuthRad),
+        camera.distance * sin(cameraZenithRad) * cos(cameraAzimuthRad),
+        camera.distance * cos(cameraZenithRad));
+    Vec3f direction = (Vec3f(0.0f, 0.0f, 0.0f) - position).normalize();
+    Vec3f upVector(0.0f, 0.0f, 1.0f);
+    Vec3f right = direction.cross(upVector).normalize();
+    Vec3f up = right.cross(direction).normalize();
+    return CameraBasis{position, direction, right, up};
+}
+
+struct OrthographicFit {
+    Real size;        // half-height, in metres, with the configured margin
+    Real centerRight;  // vegetation bounding-box centroid, projected on the right/up axes
+    Real centerUp;
+};
+
+// Fits an orthographic frame to the real vegetation bounding box (not assumed centred on the world origin).
+// fill=false ("contain"): both axes fully visible, may letterbox the shorter one.
+// fill=true ("cover"): zooms in so neither axis has empty margin, cropping the excess on the longer one.
+OrthographicFit computeOrthographicFit(const std::vector<Sphere>& scenario, const CameraBasis& basis, Real aspectratio, Real marginFraction, bool fill) {
+    Real minRight = std::numeric_limits<Real>::max(), maxRight = std::numeric_limits<Real>::lowest();
+    Real minUp = std::numeric_limits<Real>::max(), maxUp = std::numeric_limits<Real>::lowest();
+    bool any = false;
+    for (const auto& object : scenario) {
+        if (object.surface != Surface::VEGETATION) continue;
+        any = true;
+        const Real boundingRadius = std::max(object.horizontalRadius, object.verticalRadius);
+        const Real rightCoord = object.center.dot(basis.right);
+        const Real upCoord = object.center.dot(basis.up);
+        minRight = std::min(minRight, rightCoord - boundingRadius);
+        maxRight = std::max(maxRight, rightCoord + boundingRadius);
+        minUp = std::min(minUp, upCoord - boundingRadius);
+        maxUp = std::max(maxUp, upCoord + boundingRadius);
+    }
+    if (!any) return OrthographicFit{100.0, 0.0, 0.0}; // fallback: no vegetation found
+
+    const Real centerRight = 0.5 * (minRight + maxRight);
+    const Real centerUp = 0.5 * (minUp + maxUp);
+    const Real halfRight = 0.5 * (maxRight - minRight);
+    const Real halfUp = 0.5 * (maxUp - minUp);
+    const Real margin = 1.0 + marginFraction;
+    const Real size = (fill ? std::min(halfUp, halfRight / aspectratio)
+                             : std::max(halfUp, halfRight / aspectratio)) * margin;
+    return OrthographicFit{size, centerRight, centerUp};
+}
 
 struct PixelData {
     Vec3f colour = SKY_COLOUR; // by dafault SKY is reached
@@ -397,22 +461,12 @@ std::vector<PixelData> render(const std::vector<Sphere> &spheres, const Camera& 
     std::vector<PixelData> pixelDataArray(width * height);
     Real invWidth = 1 / Real(width), invHeight = 1 / Real(height);
     Real aspectratio = width / Real(height);
-    Real angle = tan(M_PI * 0.5 * camera.fov / 180.);
-    
-    // Camera configuration and position
-    Real cameraZenithRad = (camera.zenith == 0 ? 0.00001 : camera.zenith) * M_PI / 180.0f;
-    Real cameraAzimuthRad = camera.azimuth * M_PI / 180.0f;
-    Real camX = camera.distance * sin(cameraZenithRad) * sin(cameraAzimuthRad);
-    Real camY = camera.distance * sin(cameraZenithRad) * cos(cameraAzimuthRad);
-    Real camZ = camera.distance * cos(cameraZenithRad);
-    Vec3f cameraPosition(camX, camY, camZ);
-    Vec3f cameraTarget(0.0f, 0.0f, 0.0f);
-    Vec3f cameraDirection = (cameraTarget - cameraPosition).normalize();
-	
-    Vec3f upVector(0.0f, 0.0f, 1.0f);
-    Vec3f cameraRight = cameraDirection.cross(upVector).normalize();
-    Vec3f cameraUp = cameraRight.cross(cameraDirection).normalize();
-    
+    Real angle = tan(M_PI * 0.5 * camera.fov / 180.); // solo se usa en modo perspectiva
+
+    const CameraBasis basis = computeCameraBasis(camera);
+    const Real halfHeight = camera.size;
+    const Real halfWidth = camera.size * aspectratio;
+
     #pragma omp parallel for schedule(dynamic) collapse(1)
     for (unsigned y = 0; y < height; ++y) {
         for (unsigned x = 0; x < width; ++x) {
@@ -422,14 +476,24 @@ std::vector<PixelData> render(const std::vector<Sphere> &spheres, const Camera& 
             Real pixelScreenX = 2 * pixelNDCX - 1;
             Real pixelScreenY = 1 - 2 * pixelNDCY;
 
-            Real pixelCameraX = pixelScreenX * angle * aspectratio;
-            Real pixelCameraY = pixelScreenY * angle;
+            Vec3f rayOrigin;
+            Vec3f rayDirection;
 
-            Vec3f rayDirection = (cameraDirection +
-                                  cameraRight * pixelCameraX +
-                                  cameraUp * pixelCameraY).normalize();
+            if (camera.orthographic) {
+                rayOrigin = basis.position +
+                            basis.right * (pixelScreenX * halfWidth + camera.offsetRight) +
+                            basis.up * (pixelScreenY * halfHeight + camera.offsetUp);
+                rayDirection = basis.direction;
+            } else {
+                const Real pixelCameraX = pixelScreenX * angle * aspectratio;
+                const Real pixelCameraY = pixelScreenY * angle;
+                rayOrigin = basis.position;
+                rayDirection = (basis.direction +
+                                basis.right * pixelCameraX +
+                                basis.up * pixelCameraY).normalize();
+            }
 
-            PixelData pixelData = trace(cameraPosition, rayDirection, spheres);
+            PixelData pixelData = trace(rayOrigin, rayDirection, spheres);
             pixelDataArray[y * width + x] = pixelData;
 
         }
@@ -496,7 +560,7 @@ Sphere generateSun(const Settings& settings) {
     Real solarAzimuth = settings.saa;
         
     // Calculate the position of the sun at x, y, z
-    Real solarDistance = settings.cds*1.001;  // Distance from the origin, must be behind the camera
+    Real solarDistance = EARTH_SUN_DISTANCE;  // Fixed real distance, independent from camera_distance so light rays stay parallel
     Real solarZenithRad = solarZenith * M_PI / 180.0f;
     Real solarAzimuthRad = solarAzimuth * M_PI / 180.0f;
 
@@ -513,7 +577,7 @@ Sphere generateSun(const Settings& settings) {
     return Sphere(sunPosition, sunRadius, Surface::LIGHT, 0);
 }
 
-Settings loadSettings(const std::string& filename, const Settings& preferedSettings, bool &gap_fraction_profile) {
+Settings loadSettings(const std::string& filename, const Settings& preferedSettings, bool &gap_fraction_profile, bool &orthographic, bool &cameraFill) {
     std::ifstream file(filename);
     std::string line;
 
@@ -552,6 +616,10 @@ Settings loadSettings(const std::string& filename, const Settings& preferedSetti
             settings.cds = std::isnan(preferedSettings.cds) ? floatValue : preferedSettings.cds;
         } else if (key == "camera_fov") {
             settings.fov = std::isnan(preferedSettings.fov) ? floatValue : preferedSettings.fov;
+        } else if (key == "camera_size") {
+            settings.csize = std::isnan(preferedSettings.csize) ? floatValue : preferedSettings.csize;
+        } else if (key == "camera_margin") {
+            settings.cmargin = std::isnan(preferedSettings.cmargin) ? floatValue : preferedSettings.cmargin;
         } else if (key == "solar_zenith") {
             settings.sza = std::isnan(preferedSettings.sza) ? floatValue : preferedSettings.sza;
         } else if (key == "solar_azimuth") {
@@ -560,6 +628,10 @@ Settings loadSettings(const std::string& filename, const Settings& preferedSetti
             debug = (unsigned) floatValue;
         } else if (key == "gap_fraction_profile_enabled") {
             gap_fraction_profile = (bool) floatValue;
+        } else if (key == "camera_projection") {
+            orthographic = (bool) floatValue; // 0 = perspective (default), 1 = orthographic
+        } else if (key == "camera_fill") {
+            cameraFill = (bool) floatValue; // 0 = contain/letterbox (default), 1 = zoom to fill, cropping the longer axis
         }
     }
     file.close();
@@ -568,6 +640,8 @@ Settings loadSettings(const std::string& filename, const Settings& preferedSetti
         std::clog << "Debug mode enabled" << std::endl << std::flush;
         std::clog << "settings_file='" << filename << "'" << std::endl << std::flush;
         std::clog << "camera_zenith=" << settings.cza << ", camera_azimuth=" << settings.caa << ", camera_distance=" << settings.cds << ", camera_fov=" << settings.fov << std::endl << std::flush;
+        std::clog << "camera_projection=" << (orthographic ? "orthographic" : "perspective") << ", camera_size=" << settings.csize << std::endl << std::flush;
+        std::clog << "camera_margin=" << settings.cmargin << ", camera_fill=" << cameraFill << std::endl << std::flush;
         std::clog << "solar_zenith=" << settings.sza << ", solar_azimuth=" << settings.saa << std::endl << std::flush;
         std::clog << "gap_fraction_profile_enabled=" << gap_fraction_profile << std::endl << std::flush;
     }
@@ -577,7 +651,7 @@ Settings loadSettings(const std::string& filename, const Settings& preferedSetti
 
 Settings processArgs(int argc, char **argv, std::string& sceneFile, std::string& configFile) {
     int opt;
-    Settings settings = {NAN, NAN, NAN, NAN, NAN, NAN}; // para luego controlar qué se ha cambiado
+    Settings settings = {NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN}; // para luego controlar qué se ha cambiado
 
     struct option long_options[] = {
         {"scene", required_argument, 0, 's'},   // --scene or -s
@@ -589,6 +663,8 @@ Settings processArgs(int argc, char **argv, std::string& sceneFile, std::string&
         {"caa", required_argument, 0, 'n'},     // --caa (-n deshabilitado)
         {"cds", required_argument, 0, 'd'},     // --cds (-d deshabilitado)
         {"fov", required_argument, 0, 'f'},     // --fov (-f deshabilitado)
+        {"csize", required_argument, 0, 'o'},   // --csize (-o deshabilitado), semialtura ortografica
+        {"cmargin", required_argument, 0, 'g'}, // --cmargin (-g deshabilitado), margen del auto-fit (fraccion)
         {0, 0, 0, 0}                            // Termino de la lista
     };
 
@@ -604,7 +680,7 @@ Settings processArgs(int argc, char **argv, std::string& sceneFile, std::string&
                 std::cout << "Usage: " << argv[0] << std::endl << 
                     "\t[-s|--scene scene_file (scene.txt)]" << std::endl << 
                     "\t[-c|--config config_file (settings.txt)]" << std::endl << 
-                    "\t[--sza value] [--saa value] [--cza value] [--caa value] [--cds value] [--fov value]" << std::endl << 
+                    "\t[--sza value] [--saa value] [--cza value] [--caa value] [--cds value] [--fov value] [--csize value] [--cmargin value]" << std::endl << 
                     "\t[-h] (show this)" << std::endl << std::flush;
                 exit(EXIT_SUCCESS);
             case 'z':
@@ -625,6 +701,12 @@ Settings processArgs(int argc, char **argv, std::string& sceneFile, std::string&
             case 'f':
                 settings.fov = std::stod(optarg);
                 break;
+            case 'o':
+                settings.csize = std::stod(optarg);
+                break;
+            case 'g':
+                settings.cmargin = std::stod(optarg);
+                break;
             default:
                 std::cerr << "Use -h for help!\n";
                 exit(EXIT_FAILURE);
@@ -634,7 +716,7 @@ Settings processArgs(int argc, char **argv, std::string& sceneFile, std::string&
     return settings;
 }
 
-void saveImage(const std::vector<PixelData>& pixelDataArray, const std::string& filename) {
+void saveImage(const std::vector<PixelData>& pixelDataArray) {
     std::ofstream asciiImage("./output_image.ppm", std::ios::out | std::ios::binary);
     asciiImage << "P6\n" << width << " " << height << "\n255\n";
     
@@ -801,17 +883,32 @@ int main(int argc, char **argv)
     std::string sceneFile = "scene.txt";
     std::string configFile = "settings.txt";
     bool gap_fraction_profile = false;
+    bool orthographic = false;
+    bool cameraFill = false;
 
     // Arguments take precedence over configuration files
     Settings settingsFromArgs = processArgs(argc, argv, sceneFile, configFile);
-    Settings settings = loadSettings(configFile, settingsFromArgs, gap_fraction_profile);
+    Settings settings = loadSettings(configFile, settingsFromArgs, gap_fraction_profile, orthographic, cameraFill);
 
-    Camera camera = { settings.cza, settings.caa, settings.cds, settings.fov };
+    Camera camera = { settings.cza, settings.caa, settings.cds, settings.fov, orthographic, settings.csize };
     Sphere sun = generateSun(settings);
     std::vector<Sphere> scenario = loadScene(sceneFile, sun);
+
+    if (camera.orthographic) {
+        const CameraBasis basis = computeCameraBasis(camera);
+        const Real aspectratio = width / Real(height);
+        const OrthographicFit fit = computeOrthographicFit(scenario, basis, aspectratio, settings.cmargin, cameraFill);
+        camera.offsetRight = fit.centerRight;
+        camera.offsetUp = fit.centerUp;
+        if (camera.size <= 0.0) camera.size = fit.size;
+        if (debug) std::clog << "Orthographic fit: size=" << camera.size
+                              << " offsetRight=" << fit.centerRight
+                              << " offsetUp=" << fit.centerUp << std::endl << std::flush;
+    }
+
     std::vector<PixelData> pixelDataArray = render(scenario, camera);
     
-    saveImage(pixelDataArray, "output_image");
+    saveImage(pixelDataArray);
     showStats(pixelDataArray);
     
     if(camera.zenith == 90)

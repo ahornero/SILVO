@@ -1,0 +1,31 @@
+# Sun position
+solar_zenith = 24.32513
+solar_azimuth = 121.845
+
+# Camera location
+# camera_distance must stay above the tallest crown along the view axis;
+# it no longer controls the visible footprint in orthographic mode.
+camera_zenith = 0
+camera_azimuth = 180
+camera_distance = 600
+camera_fov = 30
+# Orthographic half-height, in metres; 0 (or omitted) auto-fits all vegetation
+camera_size = 0
+# Camera margin, this parameter is ignored in perspective mode or
+camera_margin = 0.05 # 0.01; 1% by default
+
+## EXTRA, following flags cannot be altered from command line arguments
+# Debug: 0 (disabled), 1 (enabled), 2 (verbose, including scene definition)
+debug = 1
+
+# Gap Fraction Profile: 0 (disabled), 1 (enabled)
+gap_fraction_profile_enabled = 0
+
+# Camera projection: 0 (perspective, default), 1 (orthographic)
+# if perspective, camera_distance and camera_fov are used to control the visible footprint
+# if orthographic, camera_size, camera_margin and camera_fill are used to control the visible footprint
+camera_projection = 1
+
+# Camera fill, 0 = contain/letterbox (default), 1 = zoom to fill, cropping the longer axis
+camera_fill = 1
+
